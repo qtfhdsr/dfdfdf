@@ -7405,7 +7405,7 @@ document.head.appendChild(swipeStyle);
 
 <script>
 (function() {
-  const SWIPE_THRESHOLD = 24;
+  const SWIPE_THRESHOLD = 24;   // минимальный порог для свайпа
   const ANIM_MS = 250;
 
   let startX = 0, startY = 0;
@@ -7451,13 +7451,13 @@ document.head.appendChild(swipeStyle);
       nextPage = null;
     }
 
-    if (nextPage) {
-      nextPage.style.display = "block";
-      nextPage.classList.add("swipeable-page", "no-transition", "pe-none");
-      nextPage.style.transform = (direction === "right") ? "translateX(-100%)" : "translateX(100%)";
-      activePage.classList.add("swipeable-page", "no-transition", "pe-none");
-      activePage.style.transform = "translateX(0)";
-    }
+    if (!nextPage) return;
+
+    nextPage.style.display = "block";
+    nextPage.classList.add("swipeable-page", "no-transition", "pe-none");
+    nextPage.style.transform = (direction === "right") ? "translateX(-100%)" : "translateX(100%)";
+    activePage.classList.add("swipeable-page", "no-transition", "pe-none");
+    activePage.style.transform = "translateX(0)";
   }
 
   function clearAfterSuccess() {
@@ -7502,7 +7502,10 @@ document.head.appendChild(swipeStyle);
         if (window.Telegram?.WebApp?.HapticFeedback) {
           window.Telegram.WebApp.HapticFeedback.impactOccurred("light");
         }
-      } catch (e) {}
+        if (window.Telegram?.WebApp) {
+          window.Telegram.WebApp.expand(); // верхняя панель всегда открыта
+        }
+      } catch(e) {}
 
       setTimeout(clearAfterSuccess, ANIM_MS + 20);
     } else {
@@ -7524,7 +7527,7 @@ document.head.appendChild(swipeStyle);
     }
 
     isSwiping = true;
-  }, { passive: false }); // passive false нужен для preventDefault
+  }, { passive: false });
 
   document.addEventListener("touchmove", (e) => {
     if (!isSwiping) return;
@@ -7538,14 +7541,12 @@ document.head.appendChild(swipeStyle);
 
     if (Math.abs(dx) < SWIPE_THRESHOLD) return;
 
-    e.preventDefault(); // Блокируем скролл
+    if (e.cancelable) e.preventDefault();
 
     swipeDirection = dx > 0 ? "right" : "left";
 
-    if (!nextPage) {
-      prepareNextPage(swipeDirection);
-      if (!nextPage) { isSwiping = false; return; }
-    }
+    if (!nextPage) prepareNextPage(swipeDirection);
+    if (!nextPage) { isSwiping = false; return; }
 
     activePage.style.transform = `translateX(${dx}px)`;
     nextPage.style.transform = (swipeDirection === "right") ? `translateX(${dx - window.innerWidth}px)` : `translateX(${dx + window.innerWidth}px)`;

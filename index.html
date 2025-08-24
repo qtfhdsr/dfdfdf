@@ -7482,18 +7482,12 @@ function finishSwipe(success) {
       : "translateX(-100%)";
     nextPage.style.transform = "translateX(0)";
 
-    // === Вибрация / Haptic feedback ===
     try {
-      if (navigator.vibrate) {
-        navigator.vibrate(30); // Android
+      if (navigator.vibrate) navigator.vibrate(30);
+      if (window.Telegram?.WebApp?.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.impactOccurred("light");
       }
-      if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
-        window.Telegram.WebApp.HapticFeedback.impactOccurred("light"); // iOS (в Telegram)
-      }
-      // ⚓️ FIX: Всегда возвращаем верхнюю панель
-      if (window.Telegram && window.Telegram.WebApp) {
-        window.Telegram.WebApp.expand();
-      }
+      if (window.Telegram?.WebApp) window.Telegram.WebApp.expand();
     } catch (e) {
       console.log("Haptics/expand not supported", e);
     }
@@ -7507,7 +7501,6 @@ function finishSwipe(success) {
     }, 250);
 
   } else {
-    // Откат
     activePage.style.transform = "translateX(0)";
     nextPage.style.transform = (swipeDirection === "right") 
       ? "translateX(-100%)" 
@@ -7523,7 +7516,7 @@ function finishSwipe(success) {
 
 // Touch события
 document.addEventListener("touchstart", e => {
-  // ⚓️ FIX: убираем canSwipeOnElement → свайп доступен везде
+  if (!canSwipeOnElement(e.target)) return;
   startX = e.touches[0].clientX;
   startY = e.touches[0].clientY;
   currentX = startX;
@@ -7532,11 +7525,12 @@ document.addEventListener("touchstart", e => {
 
 document.addEventListener("touchmove", e => {
   if (!isSwiping) return;
+
   const dx = e.touches[0].clientX - startX;
   const dy = e.touches[0].clientY - startY;
 
-  // фильтр вертикального скролла
-  if (Math.abs(dy) > Math.abs(dx)) {
+  // фильтр: свайп только если движение реально горизонтальное и >10px
+  if (Math.abs(dx) < 10 || Math.abs(dy) > Math.abs(dx)) {
     isSwiping = false;
     return;
   }
@@ -7563,8 +7557,19 @@ document.addEventListener("touchend", e => {
   finishSwipe(success);
 }, { passive: true });
 
+// Разрешённые зоны для свайпа
+function canSwipeOnElement(el) {
+  if (!el || !el.closest) return false;
+  const forbidden = ["INPUT","TEXTAREA","BUTTON","SELECT","A"];
+  if (forbidden.includes(el.tagName)) return false;
+
+  // ⚓️ FIX: блокируем свайп по нижней навигационной панели
+  if (el.closest(".bottom-nav,.nav-button")) return false;
+
+  return true;
+}
+
 })(); // конец IIFE
 </script>
-
 </body>
 </html>

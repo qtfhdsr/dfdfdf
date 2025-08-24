@@ -7403,167 +7403,223 @@ swipeStyle.textContent = '.cart-item { transition: transform 0.3s ease; position
 document.head.appendChild(swipeStyle);
 </script>
 
-
 <script>
 (function() {
-// ===== ГЛОБАЛЬНЫЕ СВАЙПЫ ДЛЯ IOS + ANDROID =====
-let startX = 0, startY = 0, currentX = 0;
-let isSwiping = false;
-let activePage = null, nextPage = null;
-let swipeDirection = null;
+  // ===== НАСТРОЙКИ ЖЕСТОВ =====
+  const SWIPE_THRESHOLD = 24;   // Минимальный пиксельный порог, чтобы жест считался свайпом
+  const EDGE_SIZE = 24;         // Свайп запускается только с краёв экрана (iOS-like)
+  const ANIM_MS = 250;
 
-// CSS для анимаций
-const swipeStyles = `
-  .page-container { 
-    position: relative; 
-    width: 100%; height: 100%;
-    overflow: hidden;
-  }
-  .swipeable-page {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    will-change: transform;
-    transition: transform 0.25s ease-out;
-  }
-  .no-transition { transition: none !important; }
-`;
-const styleEl = document.createElement("style");
-styleEl.textContent = swipeStyles;
-document.head.appendChild(styleEl);
+  let startX = 0, startY = 0, currentX = 0;
+  let isSwiping = false;
+  let startedOnEdge = false;
+  let activePage = null, nextPage = null;
+  let swipeDirection = null;
 
-// Получаем текущую страницу
-function getCurrentPage() {
-  const main = document.getElementById("main-page");
-  const cab = document.getElementById("cabinet-page");
-  const stor = document.getElementById("storage-page");
-  if (main && main.style.display !== "none") return main;
-  if (cab && cab.style.display !== "none") return cab;
-  if (stor && stor.style.display !== "none") return stor;
-  return main;
-}
+  // ===== CSS (аккуратно, без ломания кликов/скролла) =====
+  const swipeStyles = `
+    body, .page-container { touch-action: pan-y; }
 
-// Готовим следующую страницу
-function prepareNextPage(direction) {
-  const main = document.getElementById("main-page");
-  const cab = document.getElementById("cabinet-page");
-  const stor = document.getElementById("storage-page");
-
-  activePage = getCurrentPage();
-  if (activePage.id === "main-page") {
-    nextPage = (direction === "right") ? cab : stor;
-  } else if (activePage.id === "cabinet-page" && direction === "left") {
-    nextPage = main;
-  } else if (activePage.id === "storage-page" && direction === "right") {
-    nextPage = main;
-  } else {
-    nextPage = null;
-  }
-
-  if (nextPage) {
-    nextPage.style.display = "block";
-    nextPage.classList.add("swipeable-page", "no-transition");
-    nextPage.style.transform = (direction === "right") 
-      ? "translateX(-100%)" 
-      : "translateX(100%)";
-    activePage.classList.add("swipeable-page", "no-transition");
-  }
-}
-
-// Завершаем свайп
-function finishSwipe(success) {
-  if (!nextPage) return;
-  activePage.classList.remove("no-transition");
-  nextPage.classList.remove("no-transition");
-
-  if (success) {
-    activePage.style.transform = (swipeDirection === "right") 
-      ? "translateX(100%)" 
-      : "translateX(-100%)";
-    nextPage.style.transform = "translateX(0)";
-
-    // === Вибрация / Haptic feedback ===
-    try {
-      if (navigator.vibrate) {
-        navigator.vibrate(30); // Android
-      }
-      if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
-        window.Telegram.WebApp.HapticFeedback.impactOccurred("light"); // iOS (в Telegram)
-      }
-      // ⚓️ FIX: Всегда возвращаем верхнюю панель
-      if (window.Telegram && window.Telegram.WebApp) {
-        window.Telegram.WebApp.expand();
-      }
-    } catch (e) {
-      console.log("Haptics/expand not supported", e);
+    .page-container { 
+      position: relative; 
+      width: 100%; height: 100%;
+      overflow: hidden;
     }
 
-    setTimeout(() => {
+    .swipeable-page {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      will-change: transform;
+      transition: transform 0.25s ease-out;
+    }
+
+    .no-transition { transition: none !important; }
+    .pe-none { pointer-events: none !important; }
+  `;
+  const styleEl = document.createElement("style");
+  styleEl.textContent = swipeStyles;
+  document.head.appendChild(styleEl);
+
+  // ===== УТИЛИТЫ =====
+  function getCurrentPage() {
+    const main = document.getElementById("main-page");
+    const cab  = document.getElementById("cabinet-page");
+    const stor = document.getElementById("storage-page");
+    if (main && main.style.display !== "none") return main;
+    if (cab  && cab.style.display  !== "none") return cab;
+    if (stor && stor.style.display !== "none") return stor;
+    return main;
+  }
+
+  function prepareNextPage(direction) {
+    const main = document.getElementById("main-page");
+    const cab  = document.getElementById("cabinet-page");
+    const stor = document.getElementById("storage-page");
+
+    activePage = getCurrentPage();
+
+    if (activePage.id === "main-page") {
+      nextPage = (direction === "right") ? cab : stor;
+    } else if (activePage.id === "cabinet-page" && direction === "left") {
+      nextPage = main;
+    } else if (activePage.id === "storage-page" && direction === "right") {
+      nextPage = main;
+    } else {
+      nextPage = null;
+    }
+
+    if (nextPage) {
+      // Показать следующую и подготовить позиции
+      nextPage.style.display = "block";
+      nextPage.classList.add("swipeable-page", "no-transition", "pe-none");
+      nextPage.style.transform = (direction === "right") ? "translateX(-100%)" : "translateX(100%)";
+      // Текущую тоже делаем swipeable
+      activePage.classList.add("swipeable-page", "no-transition", "pe-none");
+      activePage.style.transform = "translateX(0)";
+    }
+  }
+
+  function clearAfterSuccess() {
+    // Снять классы, сбросить transform у бывшей активной
+    if (activePage) {
       activePage.style.display = "none";
-      activePage.classList.remove("swipeable-page");
-      nextPage.classList.remove("swipeable-page");
+      activePage.classList.remove("swipeable-page", "pe-none");
+      activePage.style.transform = "";
+    }
+    if (nextPage) {
+      nextPage.classList.remove("swipeable-page", "pe-none");
+      nextPage.style.transform = "";
+      // Переключаем «текущую»
       activePage = nextPage;
       nextPage = null;
-    }, 250);
+    }
+  }
 
-  } else {
-    // Откат
-    activePage.style.transform = "translateX(0)";
-    nextPage.style.transform = (swipeDirection === "right") 
-      ? "translateX(-100%)" 
-      : "translateX(100%)";
-    setTimeout(() => {
+  function clearAfterCancel() {
+    if (nextPage) {
       nextPage.style.display = "none";
-      activePage.classList.remove("swipeable-page");
-      nextPage.classList.remove("swipeable-page");
+      nextPage.classList.remove("swipeable-page", "pe-none");
+      nextPage.style.transform = "";
       nextPage = null;
-    }, 250);
+    }
+    if (activePage) {
+      activePage.classList.remove("swipeable-page", "pe-none");
+      activePage.style.transform = "";
+    }
   }
-}
 
-// Touch события
-document.addEventListener("touchstart", e => {
-  // ⚓️ FIX: убираем canSwipeOnElement → свайп доступен везде
-  startX = e.touches[0].clientX;
-  startY = e.touches[0].clientY;
-  currentX = startX;
-  isSwiping = true;
-}, { passive: true });
+  function finishSwipe(success) {
+    if (!nextPage) return;
 
-document.addEventListener("touchmove", e => {
-  if (!isSwiping) return;
-  const dx = e.touches[0].clientX - startX;
-  const dy = e.touches[0].clientY - startY;
+    // Включаем анимации
+    activePage.classList.remove("no-transition");
+    nextPage.classList.remove("no-transition");
 
-  // фильтр вертикального скролла
-  if (Math.abs(dy) > Math.abs(dx)) {
+    if (success) {
+      // Уводим текущую, приводим следующую
+      activePage.style.transform = (swipeDirection === "right") ? "translateX(100%)" : "translateX(-100%)";
+      nextPage.style.transform = "translateX(0)";
+
+      // Haptics (без expand(), он прячет верхнюю панель на iOS Telegram)
+      try {
+        if (navigator.vibrate) navigator.vibrate(30); // Android
+        if (window.Telegram?.WebApp?.HapticFeedback) {
+          window.Telegram.WebApp.HapticFeedback.impactOccurred("light"); // iOS (в Telegram)
+        }
+      } catch (e) { /* no-op */ }
+
+      setTimeout(clearAfterSuccess, ANIM_MS + 20);
+    } else {
+      // Откат
+      activePage.style.transform = "translateX(0)";
+      nextPage.style.transform = (swipeDirection === "right") ? "translateX(-100%)" : "translateX(100%)";
+      setTimeout(clearAfterCancel, ANIM_MS + 20);
+    }
+  }
+
+  // ===== ГЛОБАЛЬНЫЕ TOUCH-СОБЫТИЯ =====
+  document.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    startX = t.clientX;
+    startY = t.clientY;
+    currentX = startX;
+    swipeDirection = null;
+
+    // «Edge-only»: запускаем свайп только от краёв
+    startedOnEdge = (startX <= EDGE_SIZE) || (startX >= window.innerWidth - EDGE_SIZE);
+
+    // Не мешаем кликам по интерактиву (опционально можно пометить низ «.no-swipe»)
+    if (e.target.closest(".no-swipe, input, textarea, select, button, a")) {
+      isSwiping = false;
+      return;
+    }
+
+    isSwiping = true;
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    if (!isSwiping) return;
+
+    const x = e.touches[0].clientX;
+    const y = e.touches[0].clientY;
+    const dx = x - startX;
+    const dy = y - startY;
+
+    // Вертикальный жест — отменяем свайп
+    if (Math.abs(dy) > Math.abs(dx)) {
+      isSwiping = false;
+      return;
+    }
+
+    // Порог, чтобы не ломать клики
+    if (Math.abs(dx) < SWIPE_THRESHOLD) {
+      return; // НЕ preventDefault — пусть тап/клик сработает
+    }
+
+    // Разрешаем только edge-gestures (особенно критично для Android)
+    if (!startedOnEdge) {
+      isSwiping = false;
+      return;
+    }
+
+    if (e.cancelable) e.preventDefault();
+
+    currentX = x;
+    swipeDirection = dx > 0 ? "right" : "left";
+
+    if (!nextPage) {
+      prepareNextPage(swipeDirection);
+      if (!nextPage) {
+        // Нельзя листнуть в таком направлении со страницы — прекращаем
+        isSwiping = false;
+        return;
+      }
+      // Включим анимацию кадром позже
+      requestAnimationFrame(() => {
+        activePage.classList.remove("no-transition");
+        nextPage.classList.remove("no-transition");
+      });
+    }
+
+    // Живой перетаскивание
+    activePage.style.transform = `translateX(${dx}px)`;
+    nextPage.style.transform = (swipeDirection === "right")
+      ? `translateX(${dx - window.innerWidth}px)`
+      : `translateX(${dx + window.innerWidth}px)`;
+  }, { passive: false });
+
+  document.addEventListener("touchend", (e) => {
+    if (!isSwiping) return;
     isSwiping = false;
-    return;
-  }
 
-  e.preventDefault();
-  currentX = e.touches[0].clientX;
-  swipeDirection = dx > 0 ? "right" : "left";
+    if (!nextPage) return;
 
-  if (!nextPage) prepareNextPage(swipeDirection);
-  if (!nextPage) return;
-
-  activePage.style.transform = `translateX(${dx}px)`;
-  nextPage.style.transform = (swipeDirection === "right")
-    ? `translateX(${dx - window.innerWidth}px)`
-    : `translateX(${dx + window.innerWidth}px)`;
-}, { passive: false });
-
-document.addEventListener("touchend", e => {
-  if (!isSwiping) return;
-  isSwiping = false;
-
-  const dx = e.changedTouches[0].clientX - startX;
-  const success = Math.abs(dx) > window.innerWidth / 4;
-  finishSwipe(success);
-}, { passive: true });
-
-})(); // конец IIFE
+    const dx = e.changedTouches[0].clientX - startX;
+    const success = Math.abs(dx) > window.innerWidth / 4;
+    finishSwipe(success);
+  }, { passive: true });
+})();
 </script>
   
 </body>

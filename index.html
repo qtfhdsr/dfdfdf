@@ -7405,7 +7405,7 @@ document.head.appendChild(swipeStyle);
 
 <script>
 (function() {
-  const SWIPE_THRESHOLD = 24;   // Минимум пикселей, чтобы стало свайпом
+  const SWIPE_THRESHOLD = 24;
   const ANIM_MS = 250;
 
   let startX = 0, startY = 0;
@@ -7414,22 +7414,9 @@ document.head.appendChild(swipeStyle);
   let swipeDirection = null;
 
   const swipeStyles = `
-    body, .page-container { touch-action: pan-y; }
-
-    .page-container { 
-      position: relative; 
-      width: 100%; height: 100%;
-      overflow: hidden;
-    }
-
-    .swipeable-page {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      will-change: transform;
-      transition: transform 0.25s ease-out;
-    }
-
+    body, .page-container { touch-action: none; } /* важно для Android */
+    .page-container { position: relative; width: 100%; height: 100%; overflow: hidden; }
+    .swipeable-page { position: absolute; top:0; left:0; width:100%; height:100%; will-change: transform; transition: transform 0.25s ease-out; }
     .no-transition { transition: none !important; }
     .pe-none { pointer-events: none !important; }
   `;
@@ -7531,14 +7518,13 @@ document.head.appendChild(swipeStyle);
     startY = t.clientY;
     swipeDirection = null;
 
-    // Не трогаем клики по интерактиву
     if (e.target.closest(".no-swipe, input, textarea, select, button, a")) {
       isSwiping = false;
       return;
     }
 
     isSwiping = true;
-  }, { passive: true });
+  }, { passive: false }); // passive false нужен для preventDefault
 
   document.addEventListener("touchmove", (e) => {
     if (!isSwiping) return;
@@ -7548,32 +7534,21 @@ document.head.appendChild(swipeStyle);
     const dx = x - startX;
     const dy = y - startY;
 
-    // Вертикаль — отменяем свайп
-    if (Math.abs(dy) > Math.abs(dx)) {
-      isSwiping = false;
-      return;
-    }
+    if (Math.abs(dy) > Math.abs(dx)) { isSwiping = false; return; }
 
-    if (Math.abs(dx) < SWIPE_THRESHOLD) {
-      return; // пока ещё не свайп
-    }
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
 
-    if (e.cancelable) e.preventDefault();
+    e.preventDefault(); // Блокируем скролл
 
     swipeDirection = dx > 0 ? "right" : "left";
 
     if (!nextPage) {
       prepareNextPage(swipeDirection);
-      if (!nextPage) {
-        isSwiping = false;
-        return;
-      }
+      if (!nextPage) { isSwiping = false; return; }
     }
 
     activePage.style.transform = `translateX(${dx}px)`;
-    nextPage.style.transform = (swipeDirection === "right")
-      ? `translateX(${dx - window.innerWidth}px)`
-      : `translateX(${dx + window.innerWidth}px)`;
+    nextPage.style.transform = (swipeDirection === "right") ? `translateX(${dx - window.innerWidth}px)` : `translateX(${dx + window.innerWidth}px)`;
   }, { passive: false });
 
   document.addEventListener("touchend", (e) => {
@@ -7585,7 +7560,7 @@ document.head.appendChild(swipeStyle);
     const dx = e.changedTouches[0].clientX - startX;
     const success = Math.abs(dx) > window.innerWidth / 4;
     finishSwipe(success);
-  }, { passive: true });
+  }, { passive: false });
 })();
 </script>
   

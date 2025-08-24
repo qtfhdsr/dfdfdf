@@ -7406,17 +7406,17 @@ document.head.appendChild(swipeStyle);
 
 <script>
 (function() {
-// ===== СВАЙПЫ ДЛЯ IOS + ANDROID =====
+// ===== ГЛОБАЛЬНЫЕ СВАЙПЫ ДЛЯ IOS + ANDROID =====
 let startX = 0, startY = 0, currentX = 0;
 let isSwiping = false;
 let activePage = null, nextPage = null;
 let swipeDirection = null;
 
-// CSS
+// CSS для анимаций
 const swipeStyles = `
   .page-container { 
     position: relative; 
-    width: 100%; height: calc(100% - 60px); /* чтобы header не трогало */
+    width: 100%; height: 100%;
     overflow: hidden;
   }
   .swipeable-page {
@@ -7482,13 +7482,21 @@ function finishSwipe(success) {
       : "translateX(-100%)";
     nextPage.style.transform = "translateX(0)";
 
-    // === HAPTIC FEEDBACK ===
+    // === Вибрация / Haptic feedback ===
     try {
-      if (navigator.vibrate) navigator.vibrate(30); // Android
-      if (window.Telegram?.WebApp?.HapticFeedback) {
-        window.Telegram.WebApp.HapticFeedback.impactOccurred("light"); // iOS
+      if (navigator.vibrate) {
+        navigator.vibrate(30); // Android
       }
-    } catch(e){}
+      if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.impactOccurred("light"); // iOS (в Telegram)
+      }
+      // ⚓️ FIX: Всегда возвращаем верхнюю панель
+      if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.expand();
+      }
+    } catch (e) {
+      console.log("Haptics/expand not supported", e);
+    }
 
     setTimeout(() => {
       activePage.style.display = "none";
@@ -7513,22 +7521,22 @@ function finishSwipe(success) {
   }
 }
 
-// Touch события (вешаем только на контент)
-document.querySelector(".page-container").addEventListener("touchstart", e => {
-  if (!canSwipeOnElement(e.target)) return;
+// Touch события
+document.addEventListener("touchstart", e => {
+  // ⚓️ FIX: убираем canSwipeOnElement → свайп доступен везде
   startX = e.touches[0].clientX;
   startY = e.touches[0].clientY;
   currentX = startX;
   isSwiping = true;
 }, { passive: true });
 
-document.querySelector(".page-container").addEventListener("touchmove", e => {
+document.addEventListener("touchmove", e => {
   if (!isSwiping) return;
   const dx = e.touches[0].clientX - startX;
   const dy = e.touches[0].clientY - startY;
 
-  // мягкий фильтр вертикали
-  if (Math.abs(dy) > Math.abs(dx) * 1.2) {
+  // фильтр вертикального скролла
+  if (Math.abs(dy) > Math.abs(dx)) {
     isSwiping = false;
     return;
   }
@@ -7546,7 +7554,7 @@ document.querySelector(".page-container").addEventListener("touchmove", e => {
     : `translateX(${dx + window.innerWidth}px)`;
 }, { passive: false });
 
-document.querySelector(".page-container").addEventListener("touchend", e => {
+document.addEventListener("touchend", e => {
   if (!isSwiping) return;
   isSwiping = false;
 
@@ -7555,15 +7563,7 @@ document.querySelector(".page-container").addEventListener("touchend", e => {
   finishSwipe(success);
 }, { passive: true });
 
-// Элементы, на которых нельзя свайпать
-function canSwipeOnElement(el) {
-  if (!el || !el.closest) return false;
-  const forbidden = ["INPUT","TEXTAREA","BUTTON","SELECT","A"];
-  if (forbidden.includes(el.tagName)) return false;
-  if (el.closest(".product-card,.cart-item,.add-to-cart-btn,.quantity-btn")) return false;
-  return true;
-}
-})(); 
+})(); // конец IIFE
 </script>
 
 </body>

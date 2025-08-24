@@ -7405,16 +7405,18 @@ document.head.appendChild(swipeStyle);
 
 <script>
 (function() {
-  const SWIPE_THRESHOLD = 24;   // минимальный порог для свайпа
+  const SWIPE_THRESHOLD = 24;
+  const EDGE_OFFSET = 20; // для Android, минимальное расстояние от края
   const ANIM_MS = 250;
 
   let startX = 0, startY = 0;
   let isSwiping = false;
   let activePage = null, nextPage = null;
   let swipeDirection = null;
+  let allowSwipe = true;
 
   const swipeStyles = `
-    body, .page-container { touch-action: none; } /* важно для Android */
+    body, .page-container { touch-action: none; }
     .page-container { position: relative; width: 100%; height: 100%; overflow: hidden; }
     .swipeable-page { position: absolute; top:0; left:0; width:100%; height:100%; will-change: transform; transition: transform 0.25s ease-out; }
     .no-transition { transition: none !important; }
@@ -7435,11 +7437,10 @@ document.head.appendChild(swipeStyle);
   }
 
   function prepareNextPage(direction) {
+    activePage = getCurrentPage();
     const main = document.getElementById("main-page");
     const cab  = document.getElementById("cabinet-page");
     const stor = document.getElementById("storage-page");
-
-    activePage = getCurrentPage();
 
     if (activePage.id === "main-page") {
       nextPage = (direction === "right") ? cab : stor;
@@ -7503,9 +7504,9 @@ document.head.appendChild(swipeStyle);
           window.Telegram.WebApp.HapticFeedback.impactOccurred("light");
         }
         if (window.Telegram?.WebApp) {
-          window.Telegram.WebApp.expand(); // верхняя панель всегда открыта
+          window.Telegram.WebApp.expand();
         }
-      } catch(e) {}
+      } catch(e){}
 
       setTimeout(clearAfterSuccess, ANIM_MS + 20);
     } else {
@@ -7520,17 +7521,22 @@ document.head.appendChild(swipeStyle);
     startX = t.clientX;
     startY = t.clientY;
     swipeDirection = null;
+    allowSwipe = true;
 
     if (e.target.closest(".no-swipe, input, textarea, select, button, a")) {
       isSwiping = false;
       return;
     }
 
+    // Android: если свайп вправо начинается у самого левого края — запрещаем (системный жест)
+    const ua = navigator.userAgent || "";
+    if (/android/i.test(ua) && startX < EDGE_OFFSET) allowSwipe = false;
+
     isSwiping = true;
   }, { passive: false });
 
   document.addEventListener("touchmove", (e) => {
-    if (!isSwiping) return;
+    if (!isSwiping || !allowSwipe) return;
 
     const x = e.touches[0].clientX;
     const y = e.touches[0].clientY;
@@ -7553,7 +7559,7 @@ document.head.appendChild(swipeStyle);
   }, { passive: false });
 
   document.addEventListener("touchend", (e) => {
-    if (!isSwiping) return;
+    if (!isSwiping || !allowSwipe) return;
     isSwiping = false;
 
     if (!nextPage) return;

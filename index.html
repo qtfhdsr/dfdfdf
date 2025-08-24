@@ -7405,18 +7405,14 @@ document.head.appendChild(swipeStyle);
 
 <script>
 (function() {
-  // ===== НАСТРОЙКИ ЖЕСТОВ =====
-  const SWIPE_THRESHOLD = 24;   // Минимальный пиксельный порог, чтобы жест считался свайпом
-  const EDGE_SIZE = 24;         // Свайп запускается только с краёв экрана (iOS-like)
+  const SWIPE_THRESHOLD = 24;   // Минимум пикселей, чтобы стало свайпом
   const ANIM_MS = 250;
 
-  let startX = 0, startY = 0, currentX = 0;
+  let startX = 0, startY = 0;
   let isSwiping = false;
-  let startedOnEdge = false;
   let activePage = null, nextPage = null;
   let swipeDirection = null;
 
-  // ===== CSS (аккуратно, без ломания кликов/скролла) =====
   const swipeStyles = `
     body, .page-container { touch-action: pan-y; }
 
@@ -7441,7 +7437,6 @@ document.head.appendChild(swipeStyle);
   styleEl.textContent = swipeStyles;
   document.head.appendChild(styleEl);
 
-  // ===== УТИЛИТЫ =====
   function getCurrentPage() {
     const main = document.getElementById("main-page");
     const cab  = document.getElementById("cabinet-page");
@@ -7470,18 +7465,15 @@ document.head.appendChild(swipeStyle);
     }
 
     if (nextPage) {
-      // Показать следующую и подготовить позиции
       nextPage.style.display = "block";
       nextPage.classList.add("swipeable-page", "no-transition", "pe-none");
       nextPage.style.transform = (direction === "right") ? "translateX(-100%)" : "translateX(100%)";
-      // Текущую тоже делаем swipeable
       activePage.classList.add("swipeable-page", "no-transition", "pe-none");
       activePage.style.transform = "translateX(0)";
     }
   }
 
   function clearAfterSuccess() {
-    // Снять классы, сбросить transform у бывшей активной
     if (activePage) {
       activePage.style.display = "none";
       activePage.classList.remove("swipeable-page", "pe-none");
@@ -7490,7 +7482,6 @@ document.head.appendChild(swipeStyle);
     if (nextPage) {
       nextPage.classList.remove("swipeable-page", "pe-none");
       nextPage.style.transform = "";
-      // Переключаем «текущую»
       activePage = nextPage;
       nextPage = null;
     }
@@ -7512,44 +7503,35 @@ document.head.appendChild(swipeStyle);
   function finishSwipe(success) {
     if (!nextPage) return;
 
-    // Включаем анимации
     activePage.classList.remove("no-transition");
     nextPage.classList.remove("no-transition");
 
     if (success) {
-      // Уводим текущую, приводим следующую
       activePage.style.transform = (swipeDirection === "right") ? "translateX(100%)" : "translateX(-100%)";
       nextPage.style.transform = "translateX(0)";
 
-      // Haptics (без expand(), он прячет верхнюю панель на iOS Telegram)
       try {
-        if (navigator.vibrate) navigator.vibrate(30); // Android
+        if (navigator.vibrate) navigator.vibrate(30);
         if (window.Telegram?.WebApp?.HapticFeedback) {
-          window.Telegram.WebApp.HapticFeedback.impactOccurred("light"); // iOS (в Telegram)
+          window.Telegram.WebApp.HapticFeedback.impactOccurred("light");
         }
-      } catch (e) { /* no-op */ }
+      } catch (e) {}
 
       setTimeout(clearAfterSuccess, ANIM_MS + 20);
     } else {
-      // Откат
       activePage.style.transform = "translateX(0)";
       nextPage.style.transform = (swipeDirection === "right") ? "translateX(-100%)" : "translateX(100%)";
       setTimeout(clearAfterCancel, ANIM_MS + 20);
     }
   }
 
-  // ===== ГЛОБАЛЬНЫЕ TOUCH-СОБЫТИЯ =====
   document.addEventListener("touchstart", (e) => {
     const t = e.touches[0];
     startX = t.clientX;
     startY = t.clientY;
-    currentX = startX;
     swipeDirection = null;
 
-    // «Edge-only»: запускаем свайп только от краёв
-    startedOnEdge = (startX <= EDGE_SIZE) || (startX >= window.innerWidth - EDGE_SIZE);
-
-    // Не мешаем кликам по интерактиву (опционально можно пометить низ «.no-swipe»)
+    // Не трогаем клики по интерактиву
     if (e.target.closest(".no-swipe, input, textarea, select, button, a")) {
       isSwiping = false;
       return;
@@ -7566,43 +7548,28 @@ document.head.appendChild(swipeStyle);
     const dx = x - startX;
     const dy = y - startY;
 
-    // Вертикальный жест — отменяем свайп
+    // Вертикаль — отменяем свайп
     if (Math.abs(dy) > Math.abs(dx)) {
       isSwiping = false;
       return;
     }
 
-    // Порог, чтобы не ломать клики
     if (Math.abs(dx) < SWIPE_THRESHOLD) {
-      return; // НЕ preventDefault — пусть тап/клик сработает
-    }
-
-    // Разрешаем только edge-gestures (особенно критично для Android)
-    if (!startedOnEdge) {
-      isSwiping = false;
-      return;
+      return; // пока ещё не свайп
     }
 
     if (e.cancelable) e.preventDefault();
 
-    currentX = x;
     swipeDirection = dx > 0 ? "right" : "left";
 
     if (!nextPage) {
       prepareNextPage(swipeDirection);
       if (!nextPage) {
-        // Нельзя листнуть в таком направлении со страницы — прекращаем
         isSwiping = false;
         return;
       }
-      // Включим анимацию кадром позже
-      requestAnimationFrame(() => {
-        activePage.classList.remove("no-transition");
-        nextPage.classList.remove("no-transition");
-      });
     }
 
-    // Живой перетаскивание
     activePage.style.transform = `translateX(${dx}px)`;
     nextPage.style.transform = (swipeDirection === "right")
       ? `translateX(${dx - window.innerWidth}px)`
